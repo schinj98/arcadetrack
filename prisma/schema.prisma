@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  AFFILIATE
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+}
+
+enum OfferStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ConversionStatus {
+  PENDING
+  LOCKED
+  CLEARED
+  REVERSED
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+}
+
+enum SyncStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id             String     @id @default(cuid())
+  name           String
+  email          String     @unique
+  hashedPassword String
+  role           Role       @default(AFFILIATE)
+  status         UserStatus @default(PENDING)
+
+  // Unique code assigned on approval; becomes PubSubid1 in Impact links
+  subIdCode      String?    @unique
+
+  // Payout details (filled in by affiliate or admin)
+  payoutMethod   String?
+  payoutDetails  String?    // JSON string: { paypal, bankAccount, etc. }
+
+  // Application info
+  trafficSource  String?
+  company        String?
+
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Relations
+  affiliateLinks AffiliateLink[]
+  conversions    Conversion[]
+  payouts        Payout[]
+
+  @@index([subIdCode])
+  @@index([status])
+  @@map("users")
+}
+
+model Offer {
+  id                    String      @id @default(cuid())
+  name                  String
+  brand                 String
+  baseTrackingLink      String      // Impact base link — subId1 appended on link generation
+  payoutAmount          Decimal     @db.Decimal(10, 2) // What the advertiser pays ME
+  commissionSplitPercent Decimal    @db.Decimal(5, 2)  // % of MY commission paid to sub-affiliate
+  vertical              String?     // e.g. "Finance", "eCommerce"
+  status                OfferStatus @default(ACTIVE)
+  description           String?
+
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  // Relations
+  affiliateLinks        AffiliateLink[]
+  conversions           Conversion[]
+
+  @@map("offers")
+}
+
+model AffiliateLink {
+  id               String   @id @default(cuid())
+  userId           String
+  offerId          String
+  // Stored so it renders instantly without re-computing
+  fullTrackingLink String   // baseTrackingLink + ?subId1={subIdCode}
+  createdAt        DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  // One link per user per offer
+  @@unique([userId, offerId])
+  @@map("affiliate_links")
+}
+
+model Conversion {
+  id             String           @id @default(cuid())
+  userId         String           // Resolved by matching subId1 → User.subIdCode
+  offerId        String?          // Resolved by matching Impact campaign/ad id to Offer
+
+  // Impact-sourced identifiers
+  impactActionId String           @unique // Impact's action ID — used for idempotent sync
+  subId1         String           // Raw PubSubid1 from Impact; must equal user.subIdCode
+
+  status         ConversionStatus @default(PENDING)
+
+  saleAmount     Decimal          @db.Decimal(10, 2)
+  grossCommission Decimal         @db.Decimal(10, 2) // Full commission Impact pays ME
+  affiliateEarning Decimal        @db.Decimal(10, 2) // grossCommission × (commissionSplitPercent / 100)
+
+  // Impact date fields
+  actionDate     DateTime
+  lockingDate    DateTime?        // Impact's LockingDate
+  clearingDate   DateTime?        // Impact's ScheduledClearingDate
+
+  // Metadata
+  campaignName   String?          // Impact campaign name for display
+  syncedAt       DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offer Offer? @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([subId1])
+  @@index([status])
+  @@index([actionDate])
+  @@map("conversions")
+}
+
+model Payout {
+  id          String       @id @default(cuid())
+  userId      String
+  amount      Decimal      @db.Decimal(10, 2)
+  status      PayoutStatus @default(PENDING)
+  periodStart DateTime
+  periodEnd   DateTime
+  notes       String?
+
+  createdAt   DateTime     @default(now())
+  paidAt      DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("payouts")
+}
+
+model SyncLog {
+  id            String     @id @default(cuid())
+  runAt         DateTime   @default(now())
+  recordsPulled Int        @default(0)
+  recordsNew    Int        @default(0)
+  recordsUpdated Int       @default(0)
+  status        SyncStatus
+  errorMessage  String?
+  durationMs    Int?       // How long the sync took
+
+  @@map("sync_logs")
+}
