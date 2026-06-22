@@ -19,6 +19,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Form,
   FormControl,
@@ -41,6 +42,7 @@ const signupSchema = z
     email: z.string().email("Please enter a valid email address"),
     company: z.string().optional(),
     trafficSource: z.string().min(1, "Please select your primary traffic source"),
+    mediaProperties: z.string().max(1000).optional(),
     password: z.string().min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string(),
   })
@@ -84,6 +86,7 @@ export default function SignupPage() {
       email: "",
       company: "",
       trafficSource: "",
+      mediaProperties: "",
       password: "",
       confirmPassword: "",
     },
@@ -102,6 +105,7 @@ export default function SignupPage() {
         password: values.password,
         company: values.company || undefined,
         trafficSource: values.trafficSource,
+        mediaProperties: values.mediaProperties || undefined,
       }),
     })
 
@@ -278,6 +282,30 @@ export default function SignupPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="mediaProperties"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-gray-700">
+                      Where do you promote?{" "}
+                      <span className="text-gray-400 font-normal">(optional)</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="e.g. Instagram @handle (150k followers), finance blog at example.com, YouTube channel — Tech Reviews (80k subs)…"
+                        className="h-24 text-sm resize-none"
+                        {...field}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Tell us about your audience and platforms so we can match you with the best brands.
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}

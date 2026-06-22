@@ -16,18 +16,18 @@ export async function GET() {
   const [conversionGroups, recentConversions, monthlyConversions] = await Promise.all([
     prisma.conversion.groupBy({
       by: ["status"],
-      where: { userId },
+      where: { userId, removedByAdmin: false },
       _count: { _all: true },
       _sum: { affiliateEarning: true },
     }),
     prisma.conversion.findMany({
-      where: { userId },
+      where: { userId, removedByAdmin: false },
       orderBy: { actionDate: "desc" },
       take: 5,
       include: { offer: { select: { name: true, brand: true } } },
     }),
     prisma.conversion.findMany({
-      where: { userId, status: "CLEARED", actionDate: { gte: sixMonthsAgo } },
+      where: { userId, status: "CLEARED", removedByAdmin: false, actionDate: { gte: sixMonthsAgo } },
       select: { actionDate: true, affiliateEarning: true },
     }),
   ])

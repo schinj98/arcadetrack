@@ -10,7 +10,7 @@ export async function GET() {
   }
 
   const conversions = await prisma.conversion.findMany({
-    where: { userId: session.user.id },
+    where: { userId: session.user.id, removedByAdmin: false },
     orderBy: { actionDate: "desc" },
     take: 500, // cap to prevent unbounded memory usage
     include: { offer: { select: { name: true, brand: true } } },

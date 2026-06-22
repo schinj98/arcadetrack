@@ -9,6 +9,7 @@ const signupSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
   company: z.string().optional(),
   trafficSource: z.string().min(1, "Please select your primary traffic source"),
+  mediaProperties: z.string().max(1000).optional(),
 })
 
 export async function POST(request: Request) {
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { name, email, password, company, trafficSource } = parsed.data
+    const { name, email, password, company, trafficSource, mediaProperties } = parsed.data
 
     const existing = await prisma.user.findUnique({ where: { email } })
     if (existing) {
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
         hashedPassword,
         company: company || null,
         trafficSource,
+        mediaProperties: mediaProperties || null,
         role: "AFFILIATE",
         status: "PENDING",
       },

@@ -1,23 +1,21 @@
 import { prisma } from "@/lib/prisma"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Mail, Building2, Zap, Calendar, Tag } from "lucide-react"
+import { ArrowLeft, Mail, Building2, Zap, Monitor } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { PartnerBrands } from "@/components/admin/partner-brands"
+import { PartnerConversions } from "@/components/admin/partner-conversions"
 
 export const metadata = { title: "Partner Drilldown" }
 
 const trafficLabels: Record<string, string> = {
   social_media: "Social Media", paid_ads: "Paid Ads", seo_content: "SEO / Content",
   youtube: "YouTube", email: "Email", podcast: "Podcast", influencer: "Influencer", other: "Other",
-}
-
-const statusVariant: Record<string, "pending" | "locked" | "cleared" | "reversed"> = {
-  PENDING: "pending", LOCKED: "locked", CLEARED: "cleared", REVERSED: "reversed",
 }
 
 export default async function PartnerDrilldownPage({
@@ -32,20 +30,25 @@ export default async function PartnerDrilldownPage({
     include: {
       conversions: {
         orderBy: { actionDate: "desc" },
-        take: 50,
+        take: 100,
         include: { offer: { select: { name: true, brand: true } } },
       },
       payouts: { orderBy: { createdAt: "desc" } },
+      affiliateLinks: {
+        include: { offer: { select: { name: true, brand: true } } },
+        orderBy: { createdAt: "asc" },
+      },
       _count: { select: { conversions: true } },
     },
   })
 
   if (!user || user.role !== "AFFILIATE") notFound()
 
+  const activeConversions = user.conversions.filter((c) => !c.removedByAdmin)
   const stats = {
-    pending: user.conversions.filter((c) => c.status === "PENDING").reduce((s, c) => s + Number(c.affiliateEarning), 0),
-    locked: user.conversions.filter((c) => c.status === "LOCKED").reduce((s, c) => s + Number(c.affiliateEarning), 0),
-    cleared: user.conversions.filter((c) => c.status === "CLEARED").reduce((s, c) => s + Number(c.affiliateEarning), 0),
+    pending: activeConversions.filter((c) => c.status === "PENDING").reduce((s, c) => s + Number(c.affiliateEarning), 0),
+    locked: activeConversions.filter((c) => c.status === "LOCKED").reduce((s, c) => s + Number(c.affiliateEarning), 0),
+    cleared: activeConversions.filter((c) => c.status === "CLEARED").reduce((s, c) => s + Number(c.affiliateEarning), 0),
   }
 
   return (
@@ -106,6 +109,17 @@ export default async function PartnerDrilldownPage({
         </div>
       </div>
 
+      {/* Media properties */}
+      {user.mediaProperties && (
+        <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-4 flex gap-3">
+          <Monitor className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs text-gray-500 font-medium mb-1">Promoting on / Media Properties</p>
+            <p className="text-sm text-gray-800 whitespace-pre-line">{user.mediaProperties}</p>
+          </div>
+        </div>
+      )}
+
       {/* Earnings breakdown */}
       <div className="grid grid-cols-3 gap-4">
         {[
@@ -124,59 +138,34 @@ export default async function PartnerDrilldownPage({
         ))}
       </div>
 
-      {/* Conversions table */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">Recent Conversions</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0 p-0">
-          {user.conversions.length === 0 ? (
-            <div className="text-center py-10 text-gray-400 text-sm">No conversions yet</div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50/50">
-                  <TableHead>Date</TableHead>
-                  <TableHead>Offer</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Sale Amount</TableHead>
-                  <TableHead>Their Earning</TableHead>
-                  <TableHead>Gross Commission</TableHead>
-                  <TableHead>Lock Date</TableHead>
-                  <TableHead>Clear Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {user.conversions.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="text-sm">{formatDate(c.actionDate)}</TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-sm font-medium">{c.offer?.name ?? "Unknown"}</p>
-                        <p className="text-xs text-gray-400">{c.offer?.brand}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant[c.status] ?? "default"}>
-                        {c.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-medium">{formatCurrency(Number(c.saleAmount))}</TableCell>
-                    <TableCell className="font-semibold text-emerald-700">
-                      {c.status === "REVERSED" ? (
-                        <span className="text-red-600">-{formatCurrency(Number(c.affiliateEarning))}</span>
-                      ) : formatCurrency(Number(c.affiliateEarning))}
-                    </TableCell>
-                    <TableCell className="text-gray-500">{formatCurrency(Number(c.grossCommission))}</TableCell>
-                    <TableCell className="text-sm text-gray-500">{formatDate(c.lockingDate)}</TableCell>
-                    <TableCell className="text-sm text-gray-500">{formatDate(c.clearingDate)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      {/* Assigned Brands & Commission */}
+      <PartnerBrands
+        userId={user.id}
+        initialLinks={user.affiliateLinks.map((l) => ({
+          id: l.id,
+          offerId: l.offerId,
+          fullTrackingLink: l.fullTrackingLink,
+          commissionSplitPercent: Number(l.commissionSplitPercent),
+          offer: l.offer,
+        }))}
+      />
+
+      {/* Conversions table — client component with remove capability */}
+      <PartnerConversions
+        initialConversions={user.conversions.map((c) => ({
+          id: c.id,
+          status: c.status,
+          actionDate: c.actionDate,
+          saleAmount: Number(c.saleAmount),
+          affiliateEarning: Number(c.affiliateEarning),
+          grossCommission: Number(c.grossCommission),
+          lockingDate: c.lockingDate,
+          clearingDate: c.clearingDate,
+          removedByAdmin: c.removedByAdmin,
+          adminNote: c.adminNote,
+          offer: c.offer,
+        }))}
+      />
 
       {/* Payout history */}
       <Card className="border-0 shadow-sm">

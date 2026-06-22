@@ -35,17 +35,23 @@ export default async function LinksPage() {
     )
   }
 
-  const offers = await prisma.offer.findMany({
-    where: { status: "ACTIVE" },
+  // Only show offers this affiliate has been granted access to
+  const affiliateLinks = await prisma.affiliateLink.findMany({
+    where: { userId: session!.user.id },
+    include: { offer: true },
     orderBy: { createdAt: "asc" },
-    include: {
-      _count: { select: { conversions: { where: { userId: session!.user.id } } } },
-    },
   })
+  const offers = affiliateLinks
+    .filter((al) => al.offer.status === "ACTIVE")
+    .map((al) => ({
+      ...al.offer,
+      fullTrackingLink: al.fullTrackingLink,
+      myCommissionPct: Number(al.commissionSplitPercent),
+    }))
 
   const conversionsByOffer = await prisma.conversion.groupBy({
     by: ["offerId", "status"],
-    where: { userId: session!.user.id },
+    where: { userId: session!.user.id, removedByAdmin: false },
     _sum: { affiliateEarning: true },
     _count: { _all: true },
   })
@@ -97,13 +103,13 @@ export default async function LinksPage() {
       {offers.length === 0 ? (
         <div className="text-center py-16">
           <Link2 className="w-8 h-8 text-gray-200 mx-auto mb-3" />
-          <p className="text-sm text-gray-400">No active offers available yet</p>
+          <p className="text-sm text-gray-400">No brands assigned yet — contact your account manager</p>
         </div>
       ) : (
         <div className="space-y-4">
           {offers.map((offer) => {
-            const trackingLink = buildTrackingLink(offer.baseTrackingLink, subIdCode)
-            const myPayout = Number(offer.payoutAmount) * (Number(offer.commissionSplitPercent) / 100)
+            const trackingLink = offer.fullTrackingLink || buildTrackingLink(offer.baseTrackingLink, subIdCode)
+            const myPayout = Number(offer.payoutAmount) * (offer.myCommissionPct / 100)
             const stats = offerStats[offer.id] ?? { totalConversions: 0, totalEarnings: 0, cleared: 0 }
 
             return (
@@ -126,7 +132,7 @@ export default async function LinksPage() {
                     <div className="text-right shrink-0">
                       <p className="text-xs text-gray-500 mb-0.5">Your payout per conversion</p>
                       <p className="text-2xl font-bold text-emerald-700">{formatCurrency(myPayout)}</p>
-                      <p className="text-xs text-gray-400">{Number(offer.commissionSplitPercent)}% of {formatCurrency(Number(offer.payoutAmount))}</p>
+                      <p className="text-xs text-gray-400">{offer.myCommissionPct}% of {formatCurrency(Number(offer.payoutAmount))}</p>
                     </div>
                   </div>
 

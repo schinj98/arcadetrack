@@ -3,36 +3,34 @@ import { ConversionStatus } from "@prisma/client"
 import { getActionsBySubId } from "@/lib/impact"
 
 /**
- * Map Impact's status strings to our ConversionStatus enum.
- * Impact statuses: Pending, Approved, Locked, Cleared, Reversed, Rejected, Voided, Cancelled
+ * Derive our 4-state ConversionStatus from Impact's State field + date fields.
+ * Impact State values: "APPROVED" | "PENDING" | "REVERSED"
+ * ClearedDate present = payment has cleared regardless of State.
  */
-function mapStatus(impactStatus: string): ConversionStatus {
-  const s = impactStatus.toLowerCase().trim()
-  if (s === "cleared") return "CLEARED"
-  if (s === "locked" || s === "approved") return "LOCKED"
-  if (s === "reversed" || s === "rejected" || s === "voided" || s === "cancelled") return "REVERSED"
+function mapStatus(action: { State: string; ClearedDate?: string | null }): ConversionStatus {
+  const state = (action.State ?? "").toUpperCase().trim()
+  if (state === "REVERSED") return "REVERSED"
+  if (action.ClearedDate) return "CLEARED"
+  if (state === "APPROVED") return "LOCKED"
   return "PENDING"
 }
 
 /**
- * Best-effort match of an Impact advertiser name to one of our Offer records.
- * Tries exact brand match first, then contains match.
+ * Match an Impact action to one of our Offer records.
+ * Tries campaignId first (exact), then brand name substring match.
  */
 function matchOffer(
-  advertiserName: string | null | undefined,
+  campaignId: string | null | undefined,
   campaignName: string | null | undefined,
-  offerByBrand: Map<string, { id: string; commissionSplitPercent: number }>
-): { id: string; commissionSplitPercent: number } | null {
-  const candidates = [advertiserName, campaignName].filter(Boolean) as string[]
-
-  for (const name of candidates) {
-    const lower = name.toLowerCase()
-    // Exact match
-    if (offerByBrand.has(lower)) return offerByBrand.get(lower)!
-    // Contains match — find first offer whose brand is a substring of the name or vice-versa
-    for (const [brand, offer] of offerByBrand) {
-      if (lower.includes(brand) || brand.includes(lower)) return offer
-    }
+  offerByCampaignId: Map<string, { id: string }>,
+  offerByBrand: Map<string, { id: string }>
+): { id: string } | null {
+  if (campaignId && offerByCampaignId.has(campaignId)) return offerByCampaignId.get(campaignId)!
+  if (!campaignName) return null
+  const lower = campaignName.toLowerCase()
+  if (offerByBrand.has(lower)) return offerByBrand.get(lower)!
+  for (const [brand, offer] of offerByBrand) {
+    if (lower.includes(brand) || brand.includes(lower)) return offer
   }
   return null
 }
@@ -70,23 +68,30 @@ export async function runSync() {
     const actions = await getActionsBySubId(startDate, endDate)
 
     // ── Load lookup maps ────────────────────────────────────────────────────
-    const [dbUsers, dbOffers] = await Promise.all([
+    const [dbUsers, dbOffers, dbLinks] = await Promise.all([
       prisma.user.findMany({
         where: { role: "AFFILIATE", status: "APPROVED", subIdCode: { not: null } },
         select: { id: true, subIdCode: true },
       }),
       prisma.offer.findMany({
         where: { status: "ACTIVE" },
-        select: { id: true, brand: true, commissionSplitPercent: true },
+        select: { id: true, brand: true, impactCampaignId: true },
+      }),
+      prisma.affiliateLink.findMany({
+        select: { userId: true, offerId: true, commissionSplitPercent: true },
       }),
     ])
 
     const userBySubId = new Map(dbUsers.map((u) => [u.subIdCode!, u]))
+    const offerByCampaignId = new Map(
+      dbOffers.filter((o) => o.impactCampaignId).map((o) => [o.impactCampaignId!, { id: o.id }])
+    )
     const offerByBrand = new Map(
-      dbOffers.map((o) => [
-        o.brand.toLowerCase(),
-        { id: o.id, commissionSplitPercent: Number(o.commissionSplitPercent) },
-      ])
+      dbOffers.map((o) => [o.brand.toLowerCase(), { id: o.id }])
+    )
+    // Per-affiliate per-offer commission: "userId:offerId" → %
+    const linkCommission = new Map(
+      dbLinks.map((l) => [`${l.userId}:${l.offerId}`, Number(l.commissionSplitPercent)])
     )
 
     // ── Filter to actions we own (SubId1 matches a known sub-affiliate) ─────
@@ -109,38 +114,40 @@ export async function runSync() {
 
     for (const action of relevant) {
       const user = userBySubId.get(action.SubId1)!
-      const grossCommission = parseFloat(action.PublisherCommission || "0")
-      const offer = matchOffer(action.AdvertiserName, action.CampaignName, offerByBrand)
+      const grossCommission = parseFloat(action.Payout || "0")
+      const offer = matchOffer(action.CampaignId, action.CampaignName, offerByCampaignId, offerByBrand)
 
-      // If no offer matched, affiliate earning is 0 until admin creates the matching offer
-      const splitPct = offer ? offer.commissionSplitPercent : 0
+      // Use the affiliate's specific commission rate from their AffiliateLink
+      // Falls back to 0 if no link exists (admin hasn't granted access to this brand)
+      const splitPct = offer ? (linkCommission.get(`${user.id}:${offer.id}`) ?? 0) : 0
       const affiliateEarning = grossCommission * (splitPct / 100)
 
-      const payload = {
+      const sharedPayload = {
         userId: user.id,
         offerId: offer?.id ?? null,
         subId1: action.SubId1,
-        status: mapStatus(action.Status),
-        actionDate: new Date(action.ActionDate),
-        saleAmount: parseFloat(action.SaleAmount || "0"),
+        status: mapStatus(action),
+        actionDate: new Date(action.EventDate),
+        saleAmount: parseFloat(action.Amount || "0"),
         grossCommission,
         affiliateEarning,
-        lockingDate: action.LockedDate ? new Date(action.LockedDate) : null,
+        lockingDate: action.LockingDate ? new Date(action.LockingDate) : null,
         clearingDate: action.ClearedDate ? new Date(action.ClearedDate) : null,
-        campaignName: action.CampaignName ?? action.AdvertiserName ?? null,
+        campaignName: action.CampaignName ?? null,
         syncedAt: new Date(),
       }
 
       try {
         if (existingSet.has(action.Id)) {
+          // Preserve removedByAdmin and adminNote — do not overwrite admin actions
           await prisma.conversion.update({
             where: { impactActionId: action.Id },
-            data: payload,
+            data: sharedPayload,
           })
           recordsUpdated++
         } else {
           await prisma.conversion.create({
-            data: { impactActionId: action.Id, ...payload },
+            data: { impactActionId: action.Id, ...sharedPayload },
           })
           recordsNew++
         }

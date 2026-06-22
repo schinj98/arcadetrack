@@ -13,11 +13,13 @@ import {
   TrendingUp,
   LogOut,
   ExternalLink,
+  BarChart3,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/approvals", label: "Approvals", icon: UserCheck, badgeKey: "pending" },
   { href: "/admin/partners", label: "Partners", icon: Users },
   { href: "/admin/offers", label: "Offers", icon: Tag },
