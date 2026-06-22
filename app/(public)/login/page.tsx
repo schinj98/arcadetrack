@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { signIn } from "next-auth/react"
 import { useForm } from "react-hook-form"
@@ -53,7 +53,7 @@ const features = [
   },
 ]
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   // Sanitize: only allow same-origin relative paths to prevent open redirect attacks
@@ -101,6 +101,125 @@ export default function LoginPage() {
     }
   }
 
+  return (
+    <div className="w-full max-w-md space-y-8 animate-fade-in">
+      <div className="space-y-2">
+        <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
+        <p className="text-gray-500 text-sm">
+          Sign in to your partner account to continue
+        </p>
+      </div>
+
+      {authError && (
+        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {authError}
+        </div>
+      )}
+
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-gray-700">Email address</FormLabel>
+                <FormControl>
+                  <Input
+                    type="email"
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    className="h-11"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <div className="flex items-center justify-between">
+                  <FormLabel className="text-gray-700">Password</FormLabel>
+                  <span className="text-xs text-indigo-600 hover:text-indigo-500 cursor-pointer">
+                    Forgot password?
+                  </span>
+                </div>
+                <FormControl>
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      className="h-11 pr-10"
+                      {...field}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <Button
+            type="submit"
+            className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Signing in…
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                Sign in
+                <ArrowRight className="h-4 w-4" />
+              </span>
+            )}
+          </Button>
+        </form>
+      </Form>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-200" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-white px-3 text-gray-400 tracking-wide">
+            New to ArcadeTrack?
+          </span>
+        </div>
+      </div>
+
+      <Link
+        href="/signup"
+        className="flex items-center justify-center gap-2 w-full h-11 rounded-md border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+      >
+        Apply as a partner
+        <ArrowRight className="h-4 w-4 text-gray-400" />
+      </Link>
+    </div>
+  )
+}
+
+export default function LoginPage() {
   return (
     <div className="min-h-screen flex">
       {/* ── Left brand panel ─────────────────────────────────────────────── */}
@@ -176,120 +295,13 @@ export default function LoginPage() {
           <span className="text-lg font-bold text-gray-900">ArcadeTrack Partners</span>
         </div>
 
-        <div className="w-full max-w-md space-y-8 animate-fade-in">
-          <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
-            <p className="text-gray-500 text-sm">
-              Sign in to your partner account to continue
-            </p>
+        <Suspense fallback={
+          <div className="w-full max-w-md flex items-center justify-center h-64">
+            <span className="h-6 w-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
           </div>
-
-          {authError && (
-            <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {authError}
-            </div>
-          )}
-
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-gray-700">Email address</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="email"
-                        placeholder="you@example.com"
-                        autoComplete="email"
-                        className="h-11"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center justify-between">
-                      <FormLabel className="text-gray-700">Password</FormLabel>
-                      <span className="text-xs text-indigo-600 hover:text-indigo-500 cursor-pointer">
-                        Forgot password?
-                      </span>
-                    </div>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          type={showPassword ? "text" : "password"}
-                          placeholder="••••••••"
-                          autoComplete="current-password"
-                          className="h-11 pr-10"
-                          {...field}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <Button
-                type="submit"
-                className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Signing in…
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    Sign in
-                    <ArrowRight className="h-4 w-4" />
-                  </span>
-                )}
-              </Button>
-            </form>
-          </Form>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-3 text-gray-400 tracking-wide">
-                New to ArcadeTrack?
-              </span>
-            </div>
-          </div>
-
-          <Link
-            href="/signup"
-            className="flex items-center justify-center gap-2 w-full h-11 rounded-md border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-          >
-            Apply as a partner
-            <ArrowRight className="h-4 w-4 text-gray-400" />
-          </Link>
-        </div>
+        }>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   )
