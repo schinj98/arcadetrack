@@ -11,7 +11,7 @@ const steps = [
     label: "Application submitted",
     desc: "We received your application",
     done: true,
-  },
+  }, 
   {
     id: 2,
     label: "Under review",
